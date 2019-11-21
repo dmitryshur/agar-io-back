@@ -1,0 +1,18 @@
+[package]
+name = "agar-server"
+version = "0.1.0"
+authors = ["Dima Shur <dimashur@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix = "0.8.3"
+actix-web = "1.0"
+actix-web-actors = "1.0.2"
+serde = "1.0.101"
+serde_json = "1.0"
+rand = "0.7"
+uuid = { version = "0.8", features = ["serde", "v4"] }
+bytes = "0.4.12"
+futures = "0.1"
