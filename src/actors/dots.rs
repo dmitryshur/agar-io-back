@@ -4,8 +4,9 @@ use uuid::Uuid;
 
 use std::collections::HashMap;
 
-use crate::actors::world::{generate_coordinates, Coordinates, DotsCreateRequest};
+use crate::actors::world::{ActorDeleteDots, ActorGetDotsRequest, Coordinates};
 use crate::consts::{DELTA_VIEWPORT, DOT_SIZE, MAX_DOTS_AMOUNT};
+use crate::utils::generate_coordinates;
 
 #[derive(Debug)]
 pub struct DotsCreateResponse {
@@ -15,7 +16,7 @@ pub struct DotsCreateResponse {
 #[derive(Clone, Debug)]
 pub struct Dots {
     pub dots: HashMap<Uuid, Coordinates>,
-    pub count: u32,
+    pub dots_count: u32,
 }
 
 impl Dots {
@@ -23,6 +24,7 @@ impl Dots {
         self.dots = (0..MAX_DOTS_AMOUNT)
             .map(|_| (Uuid::new_v4(), generate_coordinates()))
             .collect();
+        self.dots_count = MAX_DOTS_AMOUNT;
     }
 
     fn find_viewport_dots(
@@ -30,9 +32,13 @@ impl Dots {
         viewport_size: Coordinates,
         player: Coordinates,
     ) -> HashMap<Uuid, Coordinates> {
-        let min_x = player.x - (viewport_size.x / 2) - DELTA_VIEWPORT;
+        let min_x = (player.x)
+            .checked_sub((viewport_size.x / 2) - DELTA_VIEWPORT)
+            .unwrap_or(0);
         let max_x = player.x + (viewport_size.x / 2) + DELTA_VIEWPORT;
-        let min_y = player.y - (viewport_size.y / 2) - DELTA_VIEWPORT;
+        let min_y = (player.y)
+            .checked_sub((viewport_size.y / 2) - DELTA_VIEWPORT)
+            .unwrap_or(0);
         let max_y = player.y + (viewport_size.y / 2) + DELTA_VIEWPORT;
 
         let dots_in_viewport: HashMap<Uuid, Coordinates> = self
@@ -63,13 +69,9 @@ impl Default for Dots {
     fn default() -> Self {
         Dots {
             dots: HashMap::new(),
-            count: 0,
+            dots_count: 0,
         }
     }
-}
-
-impl Message for DotsCreateRequest {
-    type Result = DotsCreateResponse;
 }
 
 impl<A, M> MessageResponse<A, M> for DotsCreateResponse
@@ -84,13 +86,28 @@ where
     }
 }
 
-impl Handler<DotsCreateRequest> for Dots {
+impl Handler<ActorGetDotsRequest> for Dots {
     type Result = DotsCreateResponse;
 
-    fn handle(&mut self, message: DotsCreateRequest, _context: &mut Context<Self>) -> Self::Result {
+    fn handle(
+        &mut self,
+        message: ActorGetDotsRequest,
+        _context: &mut Context<Self>,
+    ) -> Self::Result {
         let dots = self.find_viewport_dots(message.viewport_size, message.coordinates);
 
         DotsCreateResponse { dots }
+    }
+}
+
+impl Handler<ActorDeleteDots> for Dots {
+    type Result = ();
+
+    fn handle(&mut self, message: ActorDeleteDots, _context: &mut Context<Self>) {
+        for id in message.0 {
+            self.dots.remove(&id);
+            self.dots_count -= 1;
+        }
     }
 }
 
@@ -99,5 +116,97 @@ impl Actor for Dots {
 
     fn started(&mut self, _context: &mut Context<Self>) {
         self.generate_dots();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::{future, Future};
+    use std::sync::Arc;
+
+    struct GetState;
+
+    impl Message for GetState {
+        type Result = Dots;
+    }
+
+    impl<A, M> MessageResponse<A, M> for Dots
+    where
+        A: Actor,
+        M: Message<Result = Dots>,
+    {
+        fn handle<R: ResponseChannel<M>>(self, _: &mut A::Context, tx: Option<R>) {
+            if let Some(tx) = tx {
+                tx.send(self);
+            }
+        }
+    }
+
+    impl Handler<GetState> for Dots {
+        type Result = Dots;
+
+        fn handle(&mut self, _message: GetState, _context: &mut Context<Self>) -> Dots {
+            let dots = self.dots.clone();
+
+            Dots {
+                dots,
+                dots_count: self.dots_count,
+            }
+        }
+    }
+
+    #[test]
+    fn test_dots_actor_creation() {
+        let mut system = System::new("dots_creation");
+        let dots_actor = Arc::new(Dots::default().start());
+
+        let result_future = dots_actor
+            .clone()
+            .send(GetState)
+            .and_then(|state| {
+                assert_eq!(state.dots_count, MAX_DOTS_AMOUNT);
+                assert_eq!(state.dots.len(), MAX_DOTS_AMOUNT as usize);
+                future::ok(())
+            })
+            .and_then(|_fut| {
+                let get_dots_request = ActorGetDotsRequest {
+                    coordinates: Coordinates { x: 200, y: 200 },
+                    viewport_size: Coordinates { x: 800, y: 600 },
+                };
+                dots_actor.clone().send(get_dots_request).map(|result| {
+                    assert_eq!(result.dots.len(), MAX_DOTS_AMOUNT as usize);
+                })
+            })
+            .and_then(|_fut| {
+                let get_dots_request = ActorGetDotsRequest {
+                    coordinates: Coordinates { x: 500, y: 500 },
+                    viewport_size: Coordinates { x: 800, y: 600 },
+                };
+                dots_actor.clone().send(get_dots_request).map(|result| {
+                    assert_eq!(result.dots.len(), 0 as usize);
+                })
+            })
+            .and_then(|_fut| dots_actor.clone().send(GetState))
+            .and_then(|state| {
+                let dots: Vec<Uuid> = state
+                    .dots
+                    .iter()
+                    .take(2)
+                    .map(|(uuid, _coordinates)| *uuid)
+                    .collect();
+                dots_actor.do_send(ActorDeleteDots(dots));
+                future::ok(())
+            })
+            .and_then(|_fut| dots_actor.clone().send(GetState))
+            .map(|state| {
+                assert_eq!(state.dots_count, 98);
+                assert_eq!(state.dots.len(), 98);
+            })
+            .map_err(|error| {
+                panic!(error);
+            });
+
+        system.block_on(result_future).expect("System error");
     }
 }

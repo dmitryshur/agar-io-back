@@ -4,8 +4,9 @@ use actix::dev::{MessageResponse, ResponseChannel};
 use actix::{Actor, Context, Handler, Message};
 use uuid::Uuid;
 
-use crate::actors::world::{generate_coordinates, Coordinates, PlayerCreateRequest};
-use crate::consts::{DEFAULT_PLAYER_SIZE};
+use crate::actors::world::{ActorMovePlayer, ActorPlayerCreateRequest, Coordinates};
+use crate::consts::DEFAULT_PLAYER_SIZE;
+use crate::utils::{generate_coordinates};
 
 #[derive(Debug, Copy, Clone)]
 pub struct PlayerCreateResponse {
@@ -13,16 +14,16 @@ pub struct PlayerCreateResponse {
     pub coordinates: Coordinates,
 }
 
-#[derive(Clone, Debug)]
-struct Player {
+#[derive(Clone, Copy, Debug)]
+pub struct Player {
     pub size: u32,
     pub coordinates: Coordinates,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Players {
-    players: HashMap<Uuid, Player>,
-    players_count: u32,
+    pub players: HashMap<Uuid, Player>,
+    pub players_count: u32,
 }
 
 impl Default for Players {
@@ -38,10 +39,6 @@ impl Actor for Players {
     type Context = Context<Self>;
 }
 
-impl Message for PlayerCreateRequest {
-    type Result = PlayerCreateResponse;
-}
-
 impl<A, M> MessageResponse<A, M> for PlayerCreateResponse
 where
     A: Actor,
@@ -54,12 +51,12 @@ where
     }
 }
 
-impl Handler<PlayerCreateRequest> for Players {
+impl Handler<ActorPlayerCreateRequest> for Players {
     type Result = PlayerCreateResponse;
 
     fn handle(
         &mut self,
-        _message: PlayerCreateRequest,
+        _message: ActorPlayerCreateRequest,
         _context: &mut Context<Self>,
     ) -> Self::Result {
         let new_player_coordinates = generate_coordinates();
@@ -76,5 +73,87 @@ impl Handler<PlayerCreateRequest> for Players {
             id: player_id,
             coordinates: new_player_coordinates.clone(),
         }
+    }
+}
+
+impl Handler<ActorMovePlayer> for Players {
+    type Result = ();
+
+    fn handle(&mut self, message: ActorMovePlayer, _context: &mut Context<Self>) {
+        if let Some(player) = self.players.get_mut(&message.id) {
+            player.size = message.size;
+            player.coordinates.x += message.moved.x;
+            player.coordinates.y += message.moved.y;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix::prelude::*;
+    use futures::Future;
+    use std::sync::Arc;
+
+    struct GetState;
+
+    impl Message for GetState {
+        type Result = Players;
+    }
+
+    impl<A, M> MessageResponse<A, M> for Players
+    where
+        A: Actor,
+        M: Message<Result = Players>,
+    {
+        fn handle<R: ResponseChannel<M>>(self, _: &mut A::Context, tx: Option<R>) {
+            if let Some(tx) = tx {
+                tx.send(self);
+            }
+        }
+    }
+
+    impl Handler<GetState> for Players {
+        type Result = Players;
+
+        fn handle(&mut self, _message: GetState, _context: &mut Context<Self>) -> Players {
+            let players = self.players.clone();
+
+            Players {
+                players,
+                players_count: self.players_count,
+            }
+        }
+    }
+
+    #[test]
+    fn test_players_actor_creation() {
+        let mut system = System::new("players_creation");
+        let player_actor = Arc::new(Players::default().start());
+        let result_future = player_actor
+            .clone()
+            .send(ActorPlayerCreateRequest)
+            .and_then(|_result| {
+                player_actor.clone().send(GetState).map(|result| {
+                    assert_eq!(result.players_count, 1);
+                    assert_eq!(result.players.len(), 1);
+                })
+            })
+            .and_then(|_res| {
+                player_actor
+                    .clone()
+                    .send(ActorPlayerCreateRequest)
+                    .and_then(|_result| {
+                        player_actor.clone().send(GetState).map(|result| {
+                            assert_eq!(result.players_count, 2);
+                            assert_eq!(result.players.len(), 2);
+                        })
+                    })
+            })
+            .map_err(|error| {
+                println!("{:?}", error);
+            });
+
+        system.block_on(result_future).expect("System  error");
     }
 }

@@ -1,13 +1,13 @@
 use actix;
 use actix::prelude::*;
-use futures::{Future};
-use rand::Rng;
+use futures::Future;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use std::sync::Arc;
 
-use crate::actors::dots::{Dots};
-use crate::actors::players::Players;
+use crate::actors::dots::{Dots, DotsCreateResponse};
+use crate::actors::players::{PlayerCreateResponse, Players};
 use crate::actors::ws::Ws;
 use crate::client_messages::{CreateRequest, LoseRequest, MoveRequest, WinRequest};
 use crate::consts::{WORLD_X_SIZE, WORLD_Y_SIZE};
@@ -19,10 +19,35 @@ pub struct Coordinates {
     pub y: u32,
 }
 
-pub struct PlayerCreateRequest;
-pub struct DotsCreateRequest {
+pub struct ActorPlayerCreateRequest;
+
+impl Message for ActorPlayerCreateRequest {
+    type Result = PlayerCreateResponse;
+}
+
+pub struct ActorGetDotsRequest {
     pub coordinates: Coordinates,
     pub viewport_size: Coordinates,
+}
+
+impl Message for ActorGetDotsRequest {
+    type Result = DotsCreateResponse;
+}
+
+pub struct ActorDeleteDots(pub Vec<Uuid>);
+
+impl Message for ActorDeleteDots {
+    type Result = ();
+}
+
+pub struct ActorMovePlayer {
+    pub id: Uuid,
+    pub moved: Coordinates,
+    pub size: u32,
+}
+
+impl Message for ActorMovePlayer {
+    type Result = ();
 }
 
 #[derive(Debug)]
@@ -53,10 +78,10 @@ impl World {
         let dots_actor = self.dots_actor.clone();
 
         let create_future = players_actor
-            .send(PlayerCreateRequest)
+            .send(ActorPlayerCreateRequest)
             .and_then(move |new_player| {
                 dots_actor
-                    .send(DotsCreateRequest {
+                    .send(ActorGetDotsRequest {
                         coordinates: new_player.coordinates,
                         viewport_size: message.viewport_size,
                     })
@@ -75,8 +100,19 @@ impl World {
     }
 
     #[allow(dead_code)]
-    fn handle_move_message(&self, _message: MoveRequest) {
-        println!("Got move message");
+    fn handle_move_message(&self, message: MoveRequest) {
+        let players_actor = self.players_actor.clone();
+        let dots_actor = self.dots_actor.clone();
+
+        if message.dots_consumed.len() > 0 {
+            dots_actor.do_send(ActorDeleteDots(message.dots_consumed));
+        }
+
+        players_actor.do_send(ActorMovePlayer {
+            id: message.id,
+            size: message.size,
+            moved: message.moved,
+        });
     }
 
     #[allow(dead_code)]
@@ -109,10 +145,10 @@ impl Handler<CreateRequest> for World {
     }
 }
 
-pub fn generate_coordinates() -> Coordinates {
-    let mut generator = rand::thread_rng();
-    let x: u32 = generator.gen_range(0, WORLD_X_SIZE);
-    let y: u32 = generator.gen_range(0, WORLD_Y_SIZE);
+impl Handler<MoveRequest> for World {
+    type Result = ();
 
-    Coordinates { x, y }
+    fn handle(&mut self, message: MoveRequest, _context: &mut Context<Self>) {
+        self.handle_move_message(message);
+    }
 }

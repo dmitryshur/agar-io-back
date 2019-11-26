@@ -11,6 +11,7 @@ mod actors;
 mod client_messages;
 mod server_messages;
 mod consts;
+mod utils;
 
 use actors::{ws};
 

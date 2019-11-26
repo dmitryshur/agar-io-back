@@ -50,11 +50,20 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
                 ClientRequests::Create(msg) => {
                     self.world_actor.as_ref().unwrap().do_send(msg);
                 }
-                ClientRequests::Move(_msg) => {}
-                ClientRequests::Win(_msg) => {}
-                ClientRequests::Lose(_msg) => {}
-                ClientRequests::Invalid => {}
+                ClientRequests::Move(msg) => {
+                    self.world_actor.as_ref().unwrap().do_send(msg);
+                }
+                ClientRequests::Win(_msg) => {
+                    println!("Got win message");
+                }
+                ClientRequests::Lose(_msg) => {
+                    println!("Got lose message");
+                }
+                ClientRequests::Invalid => {
+                    println!("Got invalid message");
+                }
             }
         }
     }
 }
+

@@ -26,7 +26,13 @@ impl Message for CreateRequest {
 #[derive(Deserialize, Debug)]
 pub struct MoveRequest {
     pub id: Uuid,
-    pub coordinates: Coordinates,
+    pub size: u32,
+    pub moved: Coordinates,
+    pub dots_consumed: Vec<Uuid>,
+}
+
+impl Message for MoveRequest {
+  type Result = ();
 }
 
 #[derive(Deserialize, Debug)]
