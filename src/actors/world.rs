@@ -4,11 +4,13 @@ use futures::Future;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::actors::dots::{Dots, DotsCreateResponse};
 use crate::actors::players::{PlayerCreateResponse, Players};
-use crate::actors::ws::Ws;
+use crate::actors::ws::{ActorClientCreate, Ws};
 use crate::client_messages::{CreateRequest, LoseRequest, MoveRequest, WinRequest};
 use crate::consts::{WORLD_X_SIZE, WORLD_Y_SIZE};
 use crate::server_messages::CreateResponse;
@@ -53,26 +55,16 @@ impl Message for ActorMovePlayer {
 #[derive(Debug)]
 pub struct World {
     viewport_size: Coordinates,
-    ws_actor: Arc<Addr<Ws>>,
     players_actor: Arc<Addr<Players>>,
     dots_actor: Arc<Addr<Dots>>,
 }
 
 impl World {
-    pub fn new(address: Addr<Ws>) -> Self {
-        World {
-            viewport_size: Coordinates { x: 0, y: 0 },
-            ws_actor: Arc::new(address),
-            players_actor: Arc::new(Players::default().start()),
-            dots_actor: Arc::new(Dots::default().start()),
-        }
-    }
-
     fn handle_create_message(
         &mut self,
-        message: CreateRequest,
+        message: ActorClientCreate,
     ) -> impl Future<Item = CreateResponse, Error = ()> {
-        self.viewport_size = message.viewport_size;
+        self.viewport_size = message.data.viewport_size;
 
         let players_actor = self.players_actor.clone();
         let dots_actor = self.dots_actor.clone();
@@ -83,15 +75,19 @@ impl World {
                 dots_actor
                     .send(ActorGetDotsRequest {
                         coordinates: new_player.coordinates,
-                        viewport_size: message.viewport_size,
+                        viewport_size: message.data.viewport_size,
                     })
-                    .map(move |value| CreateResponse {
-                        id: new_player.id,
-                        world_size: Coordinates {
-                            x: WORLD_X_SIZE,
-                            y: WORLD_Y_SIZE,
-                        },
-                        dots: value.dots,
+                    .map(move |value| {
+                        println!("test");
+
+                        CreateResponse {
+                            id: new_player.id,
+                            world_size: Coordinates {
+                                x: WORLD_X_SIZE,
+                                y: WORLD_Y_SIZE,
+                            },
+                            dots: value.dots,
+                        }
                     })
             })
             .map_err(|_error| ());
@@ -100,21 +96,20 @@ impl World {
     }
 
     #[allow(dead_code)]
-    fn handle_move_message(&self, message: MoveRequest) {
-        let players_actor = self.players_actor.clone();
-        let dots_actor = self.dots_actor.clone();
+    // fn handle_move_message(&self, message: MoveRequest) {
+    //     let players_actor = self.players_actor.clone();
+    //     let dots_actor = self.dots_actor.clone();
 
-        if message.dots_consumed.len() > 0 {
-            dots_actor.do_send(ActorDeleteDots(message.dots_consumed));
-        }
+    //     if message.dots_consumed.len() > 0 {
+    //         dots_actor.do_send(ActorDeleteDots(message.dots_consumed));
+    //     }
 
-        players_actor.do_send(ActorMovePlayer {
-            id: message.id,
-            size: message.size,
-            moved: message.moved,
-        });
-    }
-
+    //     players_actor.do_send(ActorMovePlayer {
+    //         id: message.id,
+    //         size: message.size,
+    //         moved: message.moved,
+    //     });
+    // }
     #[allow(dead_code)]
     fn handle_win_message(&self, _message: WinRequest) {}
 
@@ -126,16 +121,26 @@ impl Actor for World {
     type Context = Context<Self>;
 }
 
-impl Handler<CreateRequest> for World {
+impl Default for World {
+    fn default() -> Self {
+        World {
+            viewport_size: Coordinates { x: 0, y: 0 },
+            players_actor: Arc::new(Players::default().start()),
+            dots_actor: Arc::new(Dots::default().start()),
+        }
+    }
+}
+
+impl Handler<ActorClientCreate> for World {
     type Result = ();
 
-    fn handle(&mut self, message: CreateRequest, _context: &mut Context<Self>) {
-        let ws_actor = self.ws_actor.clone();
+    fn handle(&mut self, message: ActorClientCreate, _context: &mut Context<Self>) {
+        let address = message.address.clone();
 
         let response_future = self
             .handle_create_message(message)
             .map(move |response| {
-                ws_actor.clone().do_send(response);
+                address.do_send(response);
             })
             .map_err(|error| {
                 println!("{:?}", error);
@@ -145,10 +150,10 @@ impl Handler<CreateRequest> for World {
     }
 }
 
-impl Handler<MoveRequest> for World {
-    type Result = ();
+// impl Handler<MoveRequest> for World {
+//     type Result = ();
 
-    fn handle(&mut self, message: MoveRequest, _context: &mut Context<Self>) {
-        self.handle_move_message(message);
-    }
-}
+//     fn handle(&mut self, message: MoveRequest, _context: &mut Context<Self>) {
+//         self.handle_move_message(message);
+//     }
+// }

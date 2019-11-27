@@ -69,6 +69,7 @@ impl Handler<ActorPlayerCreateRequest> for Players {
         self.players.insert(player_id, new_player);
         self.players_count += 1;
 
+        println!("{}", self.players_count);
         PlayerCreateResponse {
             id: player_id,
             coordinates: new_player_coordinates.clone(),
