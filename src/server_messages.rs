@@ -12,13 +12,9 @@ pub enum ServerResponses {
     Create(CreateResponse),
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Message, Serialize, Debug)]
 pub struct CreateResponse {
     pub id: Uuid,
     pub world_size: Coordinates,
     pub dots: HashMap<Uuid, Coordinates>,
-}
-
-impl Message for CreateResponse {
-    type Result = ();
 }

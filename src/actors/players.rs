@@ -1,26 +1,49 @@
 use std::collections::HashMap;
 
-use actix::dev::{MessageResponse, ResponseChannel};
-use actix::{Actor, Context, Handler, Message};
+use actix::dev::{MessageResponse};
+use actix::prelude::*;
 use uuid::Uuid;
 
-use crate::actors::world::{MoveMessage, PlayerCreateMessage, Coordinates};
+use crate::actors::world::{Coordinates};
 use crate::consts::DEFAULT_PLAYER_SIZE;
 use crate::utils::generate_coordinates;
 
-#[derive(Debug, Copy, Clone)]
-pub struct PlayerCreateAnswer {
+// ********
+// Messages
+// ********
+#[derive(Message)]
+#[rtype(result = "CreatePlayerResult")]
+pub struct CreatePlayer;
+
+#[derive(Message)]
+pub struct MovePlayer {
+    pub id: Uuid,
+    pub moved: Coordinates,
+    pub size: u32,
+}
+
+#[allow(dead_code)]
+pub struct GetPlayer;
+
+// ****************
+// Messages results
+// ****************
+#[derive(MessageResponse, Copy, Clone)]
+pub struct CreatePlayerResult {
     pub id: Uuid,
     pub coordinates: Coordinates,
 }
 
+// ********
+// Types
+// ********
 #[derive(Clone, Copy, Debug)]
 pub struct Player {
     pub size: u32,
     pub coordinates: Coordinates,
 }
 
-#[derive(Debug, Clone)]
+#[derive(MessageResponse, Debug, Clone)]
 pub struct Players {
     pub players: HashMap<Uuid, Player>,
     pub players_count: u32,
@@ -39,26 +62,10 @@ impl Actor for Players {
     type Context = Context<Self>;
 }
 
-impl<A, M> MessageResponse<A, M> for PlayerCreateAnswer
-where
-    A: Actor,
-    M: Message<Result = PlayerCreateAnswer>,
-{
-    fn handle<R: ResponseChannel<M>>(self, _: &mut A::Context, tx: Option<R>) {
-        if let Some(tx) = tx {
-            tx.send(self);
-        }
-    }
-}
+impl Handler<CreatePlayer> for Players {
+    type Result = CreatePlayerResult;
 
-impl Handler<PlayerCreateMessage> for Players {
-    type Result = PlayerCreateAnswer;
-
-    fn handle(
-        &mut self,
-        _message: PlayerCreateMessage,
-        _context: &mut Context<Self>,
-    ) -> Self::Result {
+    fn handle(&mut self, _message: CreatePlayer, _context: &mut Context<Self>) -> Self::Result {
         let new_player_coordinates = generate_coordinates();
         let new_player = Player {
             size: DEFAULT_PLAYER_SIZE,
@@ -69,17 +76,17 @@ impl Handler<PlayerCreateMessage> for Players {
         self.players.insert(player_id, new_player);
         self.players_count += 1;
 
-        PlayerCreateAnswer {
+        CreatePlayerResult {
             id: player_id,
             coordinates: new_player_coordinates.clone(),
         }
     }
 }
 
-impl Handler<MoveMessage> for Players {
+impl Handler<MovePlayer> for Players {
     type Result = ();
 
-    fn handle(&mut self, message: MoveMessage, _context: &mut Context<Self>) {
+    fn handle(&mut self, message: MovePlayer, _context: &mut Context<Self>) {
         if let Some(player) = self.players.get_mut(&message.id) {
             player.size = message.size;
             player.coordinates.x += message.moved.x;
@@ -91,27 +98,12 @@ impl Handler<MoveMessage> for Players {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix::prelude::*;
     use futures::Future;
     use std::sync::Arc;
 
+    #[derive(Message)]
+    #[rtype(result = "Players")]
     struct GetState;
-
-    impl Message for GetState {
-        type Result = Players;
-    }
-
-    impl<A, M> MessageResponse<A, M> for Players
-    where
-        A: Actor,
-        M: Message<Result = Players>,
-    {
-        fn handle<R: ResponseChannel<M>>(self, _: &mut A::Context, tx: Option<R>) {
-            if let Some(tx) = tx {
-                tx.send(self);
-            }
-        }
-    }
 
     impl Handler<GetState> for Players {
         type Result = Players;
@@ -132,7 +124,7 @@ mod tests {
         let player_actor = Arc::new(Players::default().start());
         let result_future = player_actor
             .clone()
-            .send(PlayerCreateMessage)
+            .send(CreatePlayer)
             .and_then(|_result| {
                 player_actor.clone().send(GetState).map(|result| {
                     assert_eq!(result.players_count, 1);
@@ -140,15 +132,12 @@ mod tests {
                 })
             })
             .and_then(|_res| {
-                player_actor
-                    .clone()
-                    .send(PlayerCreateMessage)
-                    .and_then(|_result| {
-                        player_actor.clone().send(GetState).map(|result| {
-                            assert_eq!(result.players_count, 2);
-                            assert_eq!(result.players.len(), 2);
-                        })
+                player_actor.clone().send(CreatePlayer).and_then(|_result| {
+                    player_actor.clone().send(GetState).map(|result| {
+                        assert_eq!(result.players_count, 2);
+                        assert_eq!(result.players.len(), 2);
                     })
+                })
             })
             .map_err(|error| {
                 println!("{:?}", error);

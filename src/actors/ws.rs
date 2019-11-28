@@ -4,9 +4,28 @@ use actix_web_actors::ws;
 use serde_json;
 
 use crate::actors::world;
-use crate::client_messages::{ClientRequests};
+use crate::client_messages::{ClientRequests, CreateRequest, MoveRequest};
 use crate::server_messages::CreateResponse;
 
+// ********
+// Messages
+// ********
+#[derive(Message)]
+#[rtype(result = "Result<CreateResponse, ()>")]
+pub struct ConnectPlayer {
+    pub request: CreateRequest,
+    pub address: Addr<Ws>,
+}
+
+#[derive(Message)]
+pub struct MovePlayer {
+    pub request: MoveRequest,
+    pub address: Addr<Ws>,
+}
+
+// ********
+// Types
+// ********
 #[derive(Debug)]
 pub struct Ws {
     world_actor: Addr<world::World>,
@@ -20,16 +39,12 @@ impl Ws {
 
 impl Actor for Ws {
     type Context = ws::WebsocketContext<Self>;
-}
 
-impl Handler<CreateResponse> for Ws {
-    type Result = ();
-
-    fn handle(&mut self, message: CreateResponse, context: &mut ws::WebsocketContext<Self>) {
-        if let Ok(json) = serde_json::to_string(&message) {
-            context.text(json);
-        }
-    }
+    // fn started(&mut self, context: &mut Self::Context) {
+    // context.run_interval(DOTS_SEND_INTERVAL, |actor, context| {
+    //     actor.world_actor.do_send();
+    // });
+    // }
 }
 
 impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
@@ -42,7 +57,10 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
                 ClientRequests::Create(msg) => {
                     let create_request_future = self
                         .world_actor
-                        .send(msg)
+                        .send(ConnectPlayer {
+                            request: msg,
+                            address: context.address(),
+                        })
                         .into_actor(self)
                         .map(move |result, _actor, context| {
                             let result_json = serde_json::to_string(&result.unwrap())
@@ -56,7 +74,10 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
                     context.spawn(create_request_future);
                 }
                 ClientRequests::Move(msg) => {
-                    self.world_actor.do_send(msg);
+                    self.world_actor.do_send(MovePlayer {
+                        request: msg,
+                        address: context.address(),
+                    });
                 }
                 ClientRequests::Win(_msg) => {
                     println!("Got win message");

@@ -1,19 +1,38 @@
-use actix::dev::{MessageResponse, ResponseChannel};
+use actix::dev::MessageResponse;
 use actix::prelude::*;
 use uuid::Uuid;
 
 use std::collections::HashMap;
 
-use crate::actors::world::{DeleteDotsMessage, GetDotsMessage, Coordinates};
+use crate::actors::world::Coordinates;
 use crate::consts::{DELTA_VIEWPORT, DOT_SIZE, MAX_DOTS_AMOUNT};
 use crate::utils::generate_coordinates;
 
-#[derive(Debug)]
-pub struct DotsCreateAnswer {
+// ********
+// Messages
+// ********
+#[derive(Message)]
+#[rtype(result = "GetDotsResult")]
+pub struct GetDots {
+    pub coordinates: Coordinates,
+    pub viewport_size: Coordinates,
+}
+
+#[derive(Message)]
+pub struct DeleteDots(pub Vec<Uuid>);
+
+// ****************
+// Messages results
+// ****************
+#[derive(MessageResponse, Debug)]
+pub struct GetDotsResult {
     pub dots: HashMap<Uuid, Coordinates>,
 }
 
-#[derive(Clone, Debug)]
+// ********
+// Types
+// ********
+#[derive(MessageResponse, Clone, Debug)]
 pub struct Dots {
     pub dots: HashMap<Uuid, Coordinates>,
     pub dots_count: u32,
@@ -74,36 +93,20 @@ impl Default for Dots {
     }
 }
 
-impl<A, M> MessageResponse<A, M> for DotsCreateAnswer
-where
-    A: Actor,
-    M: Message<Result = DotsCreateAnswer>,
-{
-    fn handle<R: ResponseChannel<M>>(self, _: &mut A::Context, tx: Option<R>) {
-        if let Some(tx) = tx {
-            tx.send(self);
-        }
-    }
-}
+impl Handler<GetDots> for Dots {
+    type Result = GetDotsResult;
 
-impl Handler<GetDotsMessage> for Dots {
-    type Result = DotsCreateAnswer;
-
-    fn handle(
-        &mut self,
-        message: GetDotsMessage,
-        _context: &mut Context<Self>,
-    ) -> Self::Result {
+    fn handle(&mut self, message: GetDots, _context: &mut Context<Self>) -> Self::Result {
         let dots = self.find_viewport_dots(message.viewport_size, message.coordinates);
 
-        DotsCreateAnswer { dots }
+        GetDotsResult { dots }
     }
 }
 
-impl Handler<DeleteDotsMessage> for Dots {
+impl Handler<DeleteDots> for Dots {
     type Result = ();
 
-    fn handle(&mut self, message: DeleteDotsMessage, _context: &mut Context<Self>) {
+    fn handle(&mut self, message: DeleteDots, _context: &mut Context<Self>) {
         for id in message.0 {
             self.dots.remove(&id);
             self.dots_count -= 1;
@@ -125,23 +128,9 @@ mod tests {
     use futures::{future, Future};
     use std::sync::Arc;
 
+    #[derive(Message)]
+    #[rtype(result = "Dots")]
     struct GetState;
-
-    impl Message for GetState {
-        type Result = Dots;
-    }
-
-    impl<A, M> MessageResponse<A, M> for Dots
-    where
-        A: Actor,
-        M: Message<Result = Dots>,
-    {
-        fn handle<R: ResponseChannel<M>>(self, _: &mut A::Context, tx: Option<R>) {
-            if let Some(tx) = tx {
-                tx.send(self);
-            }
-        }
-    }
 
     impl Handler<GetState> for Dots {
         type Result = Dots;
@@ -170,7 +159,7 @@ mod tests {
                 future::ok(())
             })
             .and_then(|_fut| {
-                let get_dots_request = GetDotsMessage {
+                let get_dots_request = GetDots {
                     coordinates: Coordinates { x: 200, y: 200 },
                     viewport_size: Coordinates { x: 800, y: 600 },
                 };
@@ -179,7 +168,7 @@ mod tests {
                 })
             })
             .and_then(|_fut| {
-                let get_dots_request = GetDotsMessage {
+                let get_dots_request = GetDots {
                     coordinates: Coordinates { x: 500, y: 500 },
                     viewport_size: Coordinates { x: 800, y: 600 },
                 };
@@ -195,7 +184,7 @@ mod tests {
                     .take(2)
                     .map(|(uuid, _coordinates)| *uuid)
                     .collect();
-                dots_actor.do_send(DeleteDotsMessage(dots));
+                dots_actor.do_send(DeleteDots(dots));
                 future::ok(())
             })
             .and_then(|_fut| dots_actor.clone().send(GetState))
