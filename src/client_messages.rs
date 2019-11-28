@@ -1,8 +1,9 @@
 use actix::prelude::*;
-use serde::{Deserialize};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::actors::world::Coordinates;
+use crate::server_messages::CreateResponse;
 
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
@@ -20,7 +21,7 @@ pub struct CreateRequest {
 }
 
 impl Message for CreateRequest {
-  type Result = ();
+    type Result = Result<CreateResponse, ()>;
 }
 
 #[derive(Deserialize, Debug)]
@@ -32,7 +33,7 @@ pub struct MoveRequest {
 }
 
 impl Message for MoveRequest {
-  type Result = ();
+    type Result = ();
 }
 
 #[derive(Deserialize, Debug)]

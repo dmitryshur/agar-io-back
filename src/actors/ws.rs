@@ -2,20 +2,10 @@ use actix;
 use actix::prelude::*;
 use actix_web_actors::ws;
 use serde_json;
-use std::sync::Arc;
 
 use crate::actors::world;
-use crate::client_messages::{ClientRequests, CreateRequest};
+use crate::client_messages::{ClientRequests};
 use crate::server_messages::CreateResponse;
-
-pub struct ActorClientCreate {
-    pub data: CreateRequest,
-    pub address: Arc<Addr<Ws>>,
-}
-
-impl Message for ActorClientCreate {
-    type Result = ();
-}
 
 #[derive(Debug)]
 pub struct Ws {
@@ -50,13 +40,23 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
 
             match message {
                 ClientRequests::Create(msg) => {
-                    self.world_actor.do_send(ActorClientCreate {
-                        data: msg,
-                        address: Arc::new(context.address())
-                    });
+                    let create_request_future = self
+                        .world_actor
+                        .send(msg)
+                        .into_actor(self)
+                        .map(move |result, _actor, context| {
+                            let result_json = serde_json::to_string(&result.unwrap())
+                                .expect("Couldn't parse CreateResponse");
+                            context.text(result_json);
+                        })
+                        .map_err(|error, _actor, _context| {
+                            println!("{}", error);
+                        });
+
+                    context.spawn(create_request_future);
                 }
                 ClientRequests::Move(msg) => {
-                    // self.world_actor.do_send(msg);
+                    self.world_actor.do_send(msg);
                 }
                 ClientRequests::Win(_msg) => {
                     println!("Got win message");

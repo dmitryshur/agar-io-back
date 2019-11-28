@@ -1,5 +1,5 @@
 use actix::prelude::*;
-use serde::{Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
 use uuid::Uuid;
 

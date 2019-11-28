@@ -4,12 +4,12 @@ use actix::dev::{MessageResponse, ResponseChannel};
 use actix::{Actor, Context, Handler, Message};
 use uuid::Uuid;
 
-use crate::actors::world::{ActorMovePlayer, ActorPlayerCreateRequest, Coordinates};
+use crate::actors::world::{MoveMessage, PlayerCreateMessage, Coordinates};
 use crate::consts::DEFAULT_PLAYER_SIZE;
-use crate::utils::{generate_coordinates};
+use crate::utils::generate_coordinates;
 
 #[derive(Debug, Copy, Clone)]
-pub struct PlayerCreateResponse {
+pub struct PlayerCreateAnswer {
     pub id: Uuid,
     pub coordinates: Coordinates,
 }
@@ -39,10 +39,10 @@ impl Actor for Players {
     type Context = Context<Self>;
 }
 
-impl<A, M> MessageResponse<A, M> for PlayerCreateResponse
+impl<A, M> MessageResponse<A, M> for PlayerCreateAnswer
 where
     A: Actor,
-    M: Message<Result = PlayerCreateResponse>,
+    M: Message<Result = PlayerCreateAnswer>,
 {
     fn handle<R: ResponseChannel<M>>(self, _: &mut A::Context, tx: Option<R>) {
         if let Some(tx) = tx {
@@ -51,12 +51,12 @@ where
     }
 }
 
-impl Handler<ActorPlayerCreateRequest> for Players {
-    type Result = PlayerCreateResponse;
+impl Handler<PlayerCreateMessage> for Players {
+    type Result = PlayerCreateAnswer;
 
     fn handle(
         &mut self,
-        _message: ActorPlayerCreateRequest,
+        _message: PlayerCreateMessage,
         _context: &mut Context<Self>,
     ) -> Self::Result {
         let new_player_coordinates = generate_coordinates();
@@ -69,18 +69,17 @@ impl Handler<ActorPlayerCreateRequest> for Players {
         self.players.insert(player_id, new_player);
         self.players_count += 1;
 
-        println!("{}", self.players_count);
-        PlayerCreateResponse {
+        PlayerCreateAnswer {
             id: player_id,
             coordinates: new_player_coordinates.clone(),
         }
     }
 }
 
-impl Handler<ActorMovePlayer> for Players {
+impl Handler<MoveMessage> for Players {
     type Result = ();
 
-    fn handle(&mut self, message: ActorMovePlayer, _context: &mut Context<Self>) {
+    fn handle(&mut self, message: MoveMessage, _context: &mut Context<Self>) {
         if let Some(player) = self.players.get_mut(&message.id) {
             player.size = message.size;
             player.coordinates.x += message.moved.x;
@@ -133,7 +132,7 @@ mod tests {
         let player_actor = Arc::new(Players::default().start());
         let result_future = player_actor
             .clone()
-            .send(ActorPlayerCreateRequest)
+            .send(PlayerCreateMessage)
             .and_then(|_result| {
                 player_actor.clone().send(GetState).map(|result| {
                     assert_eq!(result.players_count, 1);
@@ -143,7 +142,7 @@ mod tests {
             .and_then(|_res| {
                 player_actor
                     .clone()
-                    .send(ActorPlayerCreateRequest)
+                    .send(PlayerCreateMessage)
                     .and_then(|_result| {
                         player_actor.clone().send(GetState).map(|result| {
                             assert_eq!(result.players_count, 2);

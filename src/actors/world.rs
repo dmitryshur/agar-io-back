@@ -4,13 +4,10 @@ use futures::Future;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
-use crate::actors::dots::{Dots, DotsCreateResponse};
-use crate::actors::players::{PlayerCreateResponse, Players};
-use crate::actors::ws::{ActorClientCreate, Ws};
+use crate::actors::dots::{Dots, DotsCreateAnswer};
+use crate::actors::players::{PlayerCreateAnswer, Players};
 use crate::client_messages::{CreateRequest, LoseRequest, MoveRequest, WinRequest};
 use crate::consts::{WORLD_X_SIZE, WORLD_Y_SIZE};
 use crate::server_messages::CreateResponse;
@@ -21,34 +18,34 @@ pub struct Coordinates {
     pub y: u32,
 }
 
-pub struct ActorPlayerCreateRequest;
+pub struct PlayerCreateMessage;
 
-impl Message for ActorPlayerCreateRequest {
-    type Result = PlayerCreateResponse;
+impl Message for PlayerCreateMessage {
+    type Result = PlayerCreateAnswer;
 }
 
-pub struct ActorGetDotsRequest {
+pub struct GetDotsMessage {
     pub coordinates: Coordinates,
     pub viewport_size: Coordinates,
 }
 
-impl Message for ActorGetDotsRequest {
-    type Result = DotsCreateResponse;
+impl Message for GetDotsMessage {
+    type Result = DotsCreateAnswer;
 }
 
-pub struct ActorDeleteDots(pub Vec<Uuid>);
+pub struct DeleteDotsMessage(pub Vec<Uuid>);
 
-impl Message for ActorDeleteDots {
+impl Message for DeleteDotsMessage {
     type Result = ();
 }
 
-pub struct ActorMovePlayer {
+pub struct MoveMessage {
     pub id: Uuid,
     pub moved: Coordinates,
     pub size: u32,
 }
 
-impl Message for ActorMovePlayer {
+impl Message for MoveMessage {
     type Result = ();
 }
 
@@ -60,56 +57,6 @@ pub struct World {
 }
 
 impl World {
-    fn handle_create_message(
-        &mut self,
-        message: ActorClientCreate,
-    ) -> impl Future<Item = CreateResponse, Error = ()> {
-        self.viewport_size = message.data.viewport_size;
-
-        let players_actor = self.players_actor.clone();
-        let dots_actor = self.dots_actor.clone();
-
-        let create_future = players_actor
-            .send(ActorPlayerCreateRequest)
-            .and_then(move |new_player| {
-                dots_actor
-                    .send(ActorGetDotsRequest {
-                        coordinates: new_player.coordinates,
-                        viewport_size: message.data.viewport_size,
-                    })
-                    .map(move |value| {
-                        println!("test");
-
-                        CreateResponse {
-                            id: new_player.id,
-                            world_size: Coordinates {
-                                x: WORLD_X_SIZE,
-                                y: WORLD_Y_SIZE,
-                            },
-                            dots: value.dots,
-                        }
-                    })
-            })
-            .map_err(|_error| ());
-
-        create_future
-    }
-
-    #[allow(dead_code)]
-    // fn handle_move_message(&self, message: MoveRequest) {
-    //     let players_actor = self.players_actor.clone();
-    //     let dots_actor = self.dots_actor.clone();
-
-    //     if message.dots_consumed.len() > 0 {
-    //         dots_actor.do_send(ActorDeleteDots(message.dots_consumed));
-    //     }
-
-    //     players_actor.do_send(ActorMovePlayer {
-    //         id: message.id,
-    //         size: message.size,
-    //         moved: message.moved,
-    //     });
-    // }
     #[allow(dead_code)]
     fn handle_win_message(&self, _message: WinRequest) {}
 
@@ -131,29 +78,55 @@ impl Default for World {
     }
 }
 
-impl Handler<ActorClientCreate> for World {
-    type Result = ();
+impl Handler<CreateRequest> for World {
+    type Result = Box<dyn Future<Item = CreateResponse, Error = ()>>;
 
-    fn handle(&mut self, message: ActorClientCreate, _context: &mut Context<Self>) {
-        let address = message.address.clone();
+    fn handle(&mut self, message: CreateRequest, _context: &mut Context<Self>) -> Self::Result {
+        self.viewport_size = message.viewport_size;
 
-        let response_future = self
-            .handle_create_message(message)
-            .map(move |response| {
-                address.do_send(response);
+        let players_actor = self.players_actor.clone();
+        let dots_actor = self.dots_actor.clone();
+
+        let create_future = players_actor
+            .send(PlayerCreateMessage)
+            .and_then(move |new_player| {
+                dots_actor
+                    .send(GetDotsMessage {
+                        coordinates: new_player.coordinates,
+                        viewport_size: message.viewport_size,
+                    })
+                    .map(move |value| CreateResponse {
+                        id: new_player.id,
+                        world_size: Coordinates {
+                            x: WORLD_X_SIZE,
+                            y: WORLD_Y_SIZE,
+                        },
+                        dots: value.dots,
+                    })
             })
             .map_err(|error| {
-                println!("{:?}", error);
+                println!("{}", error);
             });
 
-        Arbiter::spawn(response_future);
+        Box::new(create_future)
     }
 }
 
-// impl Handler<MoveRequest> for World {
-//     type Result = ();
+impl Handler<MoveRequest> for World {
+    type Result = ();
 
-//     fn handle(&mut self, message: MoveRequest, _context: &mut Context<Self>) {
-//         self.handle_move_message(message);
-//     }
-// }
+    fn handle(&mut self, message: MoveRequest, _context: &mut Context<Self>) {
+        let players_actor = self.players_actor.clone();
+        let dots_actor = self.dots_actor.clone();
+
+        if message.dots_consumed.len() > 0 {
+            dots_actor.do_send(DeleteDotsMessage(message.dots_consumed));
+        }
+
+        players_actor.do_send(MoveMessage {
+            id: message.id,
+            size: message.size,
+            moved: message.moved,
+        });
+    }
+}

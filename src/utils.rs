@@ -8,14 +8,14 @@ use crate::consts::{WORLD_X_SIZE, WORLD_Y_SIZE};
 
 #[cfg(not(test))]
 pub fn generate_coordinates() -> Coordinates {
-  let mut generator = rand::thread_rng();
-  let x: u32 = generator.gen_range(0, WORLD_X_SIZE);
-  let y: u32 = generator.gen_range(0, WORLD_Y_SIZE);
+    let mut generator = rand::thread_rng();
+    let x: u32 = generator.gen_range(0, WORLD_X_SIZE);
+    let y: u32 = generator.gen_range(0, WORLD_Y_SIZE);
 
-  Coordinates { x, y }
+    Coordinates { x, y }
 }
 
 #[cfg(test)]
 pub fn generate_coordinates() -> Coordinates {
-  Coordinates { x: 100, y: 100 }
+    Coordinates { x: 100, y: 100 }
 }

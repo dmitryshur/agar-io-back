@@ -4,12 +4,12 @@ use uuid::Uuid;
 
 use std::collections::HashMap;
 
-use crate::actors::world::{ActorDeleteDots, ActorGetDotsRequest, Coordinates};
+use crate::actors::world::{DeleteDotsMessage, GetDotsMessage, Coordinates};
 use crate::consts::{DELTA_VIEWPORT, DOT_SIZE, MAX_DOTS_AMOUNT};
 use crate::utils::generate_coordinates;
 
 #[derive(Debug)]
-pub struct DotsCreateResponse {
+pub struct DotsCreateAnswer {
     pub dots: HashMap<Uuid, Coordinates>,
 }
 
@@ -74,10 +74,10 @@ impl Default for Dots {
     }
 }
 
-impl<A, M> MessageResponse<A, M> for DotsCreateResponse
+impl<A, M> MessageResponse<A, M> for DotsCreateAnswer
 where
     A: Actor,
-    M: Message<Result = DotsCreateResponse>,
+    M: Message<Result = DotsCreateAnswer>,
 {
     fn handle<R: ResponseChannel<M>>(self, _: &mut A::Context, tx: Option<R>) {
         if let Some(tx) = tx {
@@ -86,24 +86,24 @@ where
     }
 }
 
-impl Handler<ActorGetDotsRequest> for Dots {
-    type Result = DotsCreateResponse;
+impl Handler<GetDotsMessage> for Dots {
+    type Result = DotsCreateAnswer;
 
     fn handle(
         &mut self,
-        message: ActorGetDotsRequest,
+        message: GetDotsMessage,
         _context: &mut Context<Self>,
     ) -> Self::Result {
         let dots = self.find_viewport_dots(message.viewport_size, message.coordinates);
 
-        DotsCreateResponse { dots }
+        DotsCreateAnswer { dots }
     }
 }
 
-impl Handler<ActorDeleteDots> for Dots {
+impl Handler<DeleteDotsMessage> for Dots {
     type Result = ();
 
-    fn handle(&mut self, message: ActorDeleteDots, _context: &mut Context<Self>) {
+    fn handle(&mut self, message: DeleteDotsMessage, _context: &mut Context<Self>) {
         for id in message.0 {
             self.dots.remove(&id);
             self.dots_count -= 1;
@@ -170,7 +170,7 @@ mod tests {
                 future::ok(())
             })
             .and_then(|_fut| {
-                let get_dots_request = ActorGetDotsRequest {
+                let get_dots_request = GetDotsMessage {
                     coordinates: Coordinates { x: 200, y: 200 },
                     viewport_size: Coordinates { x: 800, y: 600 },
                 };
@@ -179,7 +179,7 @@ mod tests {
                 })
             })
             .and_then(|_fut| {
-                let get_dots_request = ActorGetDotsRequest {
+                let get_dots_request = GetDotsMessage {
                     coordinates: Coordinates { x: 500, y: 500 },
                     viewport_size: Coordinates { x: 800, y: 600 },
                 };
@@ -195,13 +195,13 @@ mod tests {
                     .take(2)
                     .map(|(uuid, _coordinates)| *uuid)
                     .collect();
-                dots_actor.do_send(ActorDeleteDots(dots));
+                dots_actor.do_send(DeleteDotsMessage(dots));
                 future::ok(())
             })
             .and_then(|_fut| dots_actor.clone().send(GetState))
             .map(|state| {
-                assert_eq!(state.dots_count, 98);
-                assert_eq!(state.dots.len(), 98);
+                assert_eq!(state.dots_count, MAX_DOTS_AMOUNT - 2);
+                assert_eq!(state.dots.len(), (MAX_DOTS_AMOUNT - 2) as usize);
             })
             .map_err(|error| {
                 panic!(error);
