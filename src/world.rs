@@ -1,6 +1,6 @@
 use crate::consts::*;
 use crate::player::Player;
-use actix::{Actor, StreamHandler, AsyncContext, Message};
+use actix::{Actor, AsyncContext, Message, StreamHandler};
 use actix_web_actors::ws;
 use rand::Rng;
 use serde::{Deserialize, Serialize};

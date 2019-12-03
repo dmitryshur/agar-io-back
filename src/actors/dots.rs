@@ -14,6 +14,7 @@ use crate::utils::generate_coordinates;
 #[derive(Message)]
 #[rtype(result = "GetDotsResult")]
 pub struct GetDots {
+    pub id: Uuid,
     pub coordinates: Coordinates,
     pub viewport_size: Coordinates,
 }
@@ -24,9 +25,10 @@ pub struct DeleteDots(pub Vec<Uuid>);
 // ****************
 // Messages results
 // ****************
-#[derive(MessageResponse, Debug)]
+#[derive(MessageResponse, Message, Debug)]
 pub struct GetDotsResult {
     pub dots: HashMap<Uuid, Coordinates>,
+    pub player_id: Uuid,
 }
 
 // ********
@@ -99,7 +101,10 @@ impl Handler<GetDots> for Dots {
     fn handle(&mut self, message: GetDots, _context: &mut Context<Self>) -> Self::Result {
         let dots = self.find_viewport_dots(message.viewport_size, message.coordinates);
 
-        GetDotsResult { dots }
+        GetDotsResult {
+            dots,
+            player_id: message.id,
+        }
     }
 }
 

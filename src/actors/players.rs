@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use actix::dev::{MessageResponse};
+use actix::dev::MessageResponse;
 use actix::prelude::*;
 use uuid::Uuid;
 
-use crate::actors::world::{Coordinates};
+use crate::actors::world::Coordinates;
 use crate::consts::DEFAULT_PLAYER_SIZE;
 use crate::utils::generate_coordinates;
 
@@ -22,8 +22,9 @@ pub struct MovePlayer {
     pub size: u32,
 }
 
-#[allow(dead_code)]
-pub struct GetPlayer;
+#[derive(Debug, Message)]
+#[rtype(result = "Player")]
+pub struct GetPlayer(pub Uuid);
 
 // ****************
 // Messages results
@@ -37,7 +38,7 @@ pub struct CreatePlayerResult {
 // ********
 // Types
 // ********
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, MessageResponse)]
 pub struct Player {
     pub size: u32,
     pub coordinates: Coordinates,
@@ -92,6 +93,16 @@ impl Handler<MovePlayer> for Players {
             player.coordinates.x += message.moved.x;
             player.coordinates.y += message.moved.y;
         }
+    }
+}
+
+impl Handler<GetPlayer> for Players {
+    type Result = Player;
+
+    fn handle(&mut self, message: GetPlayer, _context: &mut Context<Self>) -> Self::Result {
+        let matching_player = self.players.get(&message.0).unwrap();
+
+        matching_player.clone()
     }
 }
 

@@ -1,6 +1,6 @@
 use actix;
 use actix::prelude::*;
-use futures::Future;
+use futures::future;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -10,7 +10,7 @@ use std::sync::Arc;
 use crate::actors::dots::Dots;
 use crate::actors::ws::Ws;
 use crate::actors::{dots, players, ws};
-use crate::consts::{WORLD_X_SIZE, WORLD_Y_SIZE};
+use crate::consts::{WORLD_X_SIZE, WORLD_Y_SIZE, DOTS_SEND_INTERVAL};
 use crate::server_messages;
 
 // ********
@@ -24,7 +24,7 @@ pub struct Coordinates {
 
 #[derive(Debug)]
 pub struct World {
-    players_connected: HashMap<Addr<Ws>, Uuid>,
+    players_connected: HashMap<Uuid, Addr<Ws>>,
     viewport_size: Coordinates,
     players_actor: Arc<Addr<players::Players>>,
     dots_actor: Arc<Addr<Dots>>,
@@ -32,6 +32,37 @@ pub struct World {
 
 impl Actor for World {
     type Context = Context<Self>;
+
+    fn started(&mut self, context: &mut Self::Context) {
+        context.run_interval(DOTS_SEND_INTERVAL, |actor, _context| {
+            for (id, address) in actor.players_connected.iter() {
+                let players_actor = actor.players_actor.clone();
+                let dots_actor = actor.dots_actor.clone();
+
+                let player_id = id.clone();
+                let player_address = address.clone();
+                let viewport_size = actor.viewport_size;
+
+                let get_player_dots_future = players_actor
+                    .send(players::GetPlayer(player_id))
+                    .and_then(move |result| {
+                        dots_actor.send(dots::GetDots {
+                            id: player_id,
+                            coordinates: result.coordinates,
+                            viewport_size,
+                        })
+                    })
+                    .map(move |result| {
+                        player_address.do_send(result);
+                    })
+                    .map_err(|error| {
+                        println!("{}", error);
+                    });
+
+                Arbiter::spawn(get_player_dots_future);
+            }
+        });
+    }
 }
 
 impl Default for World {
@@ -45,33 +76,44 @@ impl Default for World {
     }
 }
 
+// ********
+// Handlers
+// ********
 impl Handler<ws::ConnectPlayer> for World {
-    type Result = Box<dyn Future<Item = server_messages::CreateResponse, Error = ()>>;
+    type Result = ResponseActFuture<Self, server_messages::CreateResponse, ()>;
 
     fn handle(&mut self, message: ws::ConnectPlayer, _context: &mut Context<Self>) -> Self::Result {
         self.viewport_size = message.request.viewport_size;
 
+        let player_address = message.address.clone();
         let players_actor = self.players_actor.clone();
         let dots_actor = self.dots_actor.clone();
 
         let connect_player_future = players_actor
             .send(players::CreatePlayer)
             .and_then(move |new_player| {
-                dots_actor
-                    .send(dots::GetDots {
-                        coordinates: new_player.coordinates,
-                        viewport_size: message.request.viewport_size,
-                    })
-                    .map(move |value| server_messages::CreateResponse {
-                        id: new_player.id,
-                        world_size: Coordinates {
-                            x: WORLD_X_SIZE,
-                            y: WORLD_Y_SIZE,
-                        },
-                        dots: value.dots,
-                    })
+                dots_actor.send(dots::GetDots {
+                    id: new_player.id,
+                    coordinates: new_player.coordinates,
+                    viewport_size: message.request.viewport_size,
+                })
             })
-            .map_err(|error| {
+            .and_then(|result| {
+                future::ok(server_messages::CreateResponse {
+                    id: result.player_id,
+                    world_size: Coordinates {
+                        x: WORLD_X_SIZE,
+                        y: WORLD_Y_SIZE,
+                    },
+                    dots: result.dots,
+                })
+            })
+            .into_actor(self)
+            .map(move |result, actor, _context| {
+                actor.players_connected.insert(result.id, player_address);
+                result
+            })
+            .map_err(|error, _actor, _context| {
                 println!("{}", error);
             });
 

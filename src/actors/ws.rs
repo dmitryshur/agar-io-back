@@ -3,15 +3,15 @@ use actix::prelude::*;
 use actix_web_actors::ws;
 use serde_json;
 
-use crate::actors::world;
+use crate::actors::{dots, world};
 use crate::client_messages::{ClientRequests, CreateRequest, MoveRequest};
-use crate::server_messages::CreateResponse;
+use crate::server_messages;
 
 // ********
 // Messages
 // ********
 #[derive(Message)]
-#[rtype(result = "Result<CreateResponse, ()>")]
+#[rtype(result = "Result<server_messages::CreateResponse, ()>")]
 pub struct ConnectPlayer {
     pub request: CreateRequest,
     pub address: Addr<Ws>,
@@ -39,12 +39,6 @@ impl Ws {
 
 impl Actor for Ws {
     type Context = ws::WebsocketContext<Self>;
-
-    // fn started(&mut self, context: &mut Self::Context) {
-    // context.run_interval(DOTS_SEND_INTERVAL, |actor, context| {
-    //     actor.world_actor.do_send();
-    // });
-    // }
 }
 
 impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
@@ -90,5 +84,20 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
                 }
             }
         }
+    }
+}
+
+// ********
+// Handlers
+// ********
+impl Handler<dots::GetDotsResult> for Ws {
+    type Result = ();
+
+    fn handle(&mut self, message: dots::GetDotsResult, context: &mut Self::Context) {
+        let result_json =
+            serde_json::to_string(&server_messages::DotsResponse { dots: message.dots })
+                .expect("Couldn't parse DotsResponse");
+
+        context.text(result_json);
     }
 }

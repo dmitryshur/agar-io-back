@@ -18,3 +18,8 @@ pub struct CreateResponse {
     pub world_size: Coordinates,
     pub dots: HashMap<Uuid, Coordinates>,
 }
+
+#[derive(Serialize)]
+pub struct DotsResponse {
+    pub dots:HashMap<Uuid, Coordinates>
+}
