@@ -10,8 +10,9 @@ use std::sync::Arc;
 use crate::actors::dots::Dots;
 use crate::actors::ws::Ws;
 use crate::actors::{dots, players, ws};
-use crate::consts::{WORLD_X_SIZE, WORLD_Y_SIZE, DOTS_SEND_INTERVAL};
+use crate::consts::{DOTS_SEND_INTERVAL, WORLD_X_SIZE, WORLD_Y_SIZE};
 use crate::server_messages;
+use std::borrow::Borrow;
 
 // ********
 // Types
@@ -24,7 +25,7 @@ pub struct Coordinates {
 
 #[derive(Debug)]
 pub struct World {
-    players_connected: HashMap<Uuid, Addr<Ws>>,
+    players_connected: HashMap<Addr<Ws>, Uuid>,
     viewport_size: Coordinates,
     players_actor: Arc<Addr<players::Players>>,
     dots_actor: Arc<Addr<Dots>>,
@@ -35,7 +36,7 @@ impl Actor for World {
 
     fn started(&mut self, context: &mut Self::Context) {
         context.run_interval(DOTS_SEND_INTERVAL, |actor, _context| {
-            for (id, address) in actor.players_connected.iter() {
+            for (address, id) in actor.players_connected.iter() {
                 let players_actor = actor.players_actor.clone();
                 let dots_actor = actor.dots_actor.clone();
 
@@ -110,7 +111,7 @@ impl Handler<ws::ConnectPlayer> for World {
             })
             .into_actor(self)
             .map(move |result, actor, _context| {
-                actor.players_connected.insert(result.id, player_address);
+                actor.players_connected.insert(player_address, result.id);
                 result
             })
             .map_err(|error, _actor, _context| {
@@ -118,6 +119,14 @@ impl Handler<ws::ConnectPlayer> for World {
             });
 
         Box::new(connect_player_future)
+    }
+}
+
+impl Handler<ws::DisconnectPlayer> for World {
+    type Result = ();
+
+    fn handle(&mut self, message: ws::DisconnectPlayer, _context: &mut Context<Self>) {
+        self.players_connected.remove(&message.address);
     }
 }
 
