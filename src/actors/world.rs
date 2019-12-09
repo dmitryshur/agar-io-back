@@ -17,7 +17,7 @@ use std::borrow::Borrow;
 // ********
 // Types
 // ********
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Coordinates {
     pub x: u32,
     pub y: u32,
@@ -147,4 +147,20 @@ impl Handler<ws::MovePlayer> for World {
             moved: message.request.moved,
         });
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::{future, Future};
+    use std::sync::Arc;
+
+    #[test]
+    fn test_world_actor_connect_player() {}
+
+    #[test]
+    fn test_world_actor_disconnect_player() {}
+
+    #[test]
+    fn test_world_actor_move_player() {}
 }

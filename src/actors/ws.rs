@@ -68,6 +68,9 @@ impl Actor for Ws {
     }
 }
 
+// ********
+// Handlers
+// ********
 impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
     fn handle(&mut self, socket_message: ws::Message, context: &mut Self::Context) {
         match socket_message {
@@ -125,9 +128,6 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
     }
 }
 
-// ********
-// Handlers
-// ********
 impl Handler<dots::GetDotsResult> for Ws {
     type Result = ();
 
@@ -138,4 +138,20 @@ impl Handler<dots::GetDotsResult> for Ws {
 
         context.text(result_json);
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::{future, Future};
+    use std::sync::Arc;
+
+    #[test]
+    fn test_ws_actor_connect_player() {}
+
+    #[test]
+    fn test_ws_actor_hb() {}
+
+    #[test]
+    fn test_ws_actor_get_dots() {}
 }
