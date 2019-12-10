@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn test_players_actor_move() {
-        let mut system = System::new("players_creation");
+        let mut system = System::new("players_moving");
 
         let mut initial_players = HashMap::new();
         let first_player_id =

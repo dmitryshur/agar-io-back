@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use crate::actors::world::Coordinates;
 use crate::consts::{DELTA_VIEWPORT, DOT_SIZE, MAX_DOTS_AMOUNT};
-use crate::utils::generate_coordinates;
+use crate::utils::{generate_coordinates, generate_dots};
 
 // ********
 // Messages
@@ -38,21 +38,11 @@ pub struct GetDotsResult {
 pub struct Dots {
     pub dots: HashMap<Uuid, Coordinates>,
     pub dots_count: u32,
+    pub max_dots_amount: u32,
 }
 
 impl Dots {
-    pub fn generate_dots(&mut self) {
-        self.dots = (0..MAX_DOTS_AMOUNT)
-            .map(|_| (Uuid::new_v4(), generate_coordinates()))
-            .collect();
-        self.dots_count = MAX_DOTS_AMOUNT;
-    }
-
-    fn find_viewport_dots(
-        &self,
-        viewport_size: Coordinates,
-        player: Coordinates,
-    ) -> HashMap<Uuid, Coordinates> {
+    fn find_viewport_dots(&self, viewport_size: Coordinates, player: Coordinates) -> HashMap<Uuid, Coordinates> {
         let min_x = (player.x)
             .checked_sub((viewport_size.x / 2) - DELTA_VIEWPORT)
             .unwrap_or(0);
@@ -66,9 +56,9 @@ impl Dots {
             .dots
             .iter()
             .filter(|(_id, coordinates)| {
-                coordinates.x > min_x
+                coordinates.x >= min_x
                     && (coordinates.x + DOT_SIZE < max_x)
-                    && coordinates.y > min_y
+                    && coordinates.y >= min_y
                     && coordinates.y + DOT_SIZE < max_y
             })
             .map(|(id, coordinates)| {
@@ -91,6 +81,7 @@ impl Default for Dots {
         Dots {
             dots: HashMap::new(),
             dots_count: 0,
+            max_dots_amount: MAX_DOTS_AMOUNT,
         }
     }
 }
@@ -123,7 +114,8 @@ impl Actor for Dots {
     type Context = Context<Self>;
 
     fn started(&mut self, _context: &mut Context<Self>) {
-        self.generate_dots();
+        self.dots = generate_dots(self.max_dots_amount);
+        self.dots_count = self.dots.len() as u32;
     }
 }
 
@@ -146,6 +138,7 @@ mod tests {
             Dots {
                 dots,
                 dots_count: self.dots_count,
+                max_dots_amount: self.max_dots_amount,
             }
         }
     }
@@ -155,9 +148,96 @@ mod tests {
         let mut system = System::new("dots_creation");
         let dots_actor = Arc::new(Dots::default().start());
 
-        //        system.block_on(result_future).expect("System error");
+        let get_dots_future = dots_actor
+            .send(GetState)
+            .and_then(|result: Dots| {
+                assert_eq!(result.dots.len(), 12);
+                assert_eq!(result.dots_count, 12);
+                assert_eq!(result.max_dots_amount, MAX_DOTS_AMOUNT);
+
+                dots_actor.send(GetDots {
+                    id: Uuid::parse_str("78a40100-4dc3-46e4-8a91-00e0316586e4").unwrap(),
+                    coordinates: Coordinates { x: 0, y: 0 },
+                    viewport_size: Coordinates { x: 1000, y: 1000 },
+                })
+            })
+            .and_then(|result: GetDotsResult| {
+                let dots_id = vec![
+                    "f9168c5e-ceb2-4faa-b6bf-329bf39fa1e4",
+                    "e0183a5f-92af-4379-8d8d-cfd729d77d59",
+                    "20066e7c-5dec-434f-97d1-663de407b05e",
+                    "a0e3c51b-23a5-4809-b635-3eb6b3b1f794",
+                    "77d40cd1-be99-44d2-9bcf-7450f736fdba",
+                ];
+
+                assert_eq!(result.dots.len(), 5);
+                for id in dots_id {
+                    assert_eq!(result.dots.contains_key(&Uuid::parse_str(id).unwrap()), true);
+                }
+                dots_actor.send(GetDots {
+                    id: Uuid::parse_str("78a40100-4dc3-46e4-8a91-00e0316586e4").unwrap(),
+                    coordinates: Coordinates { x: 1000, y: 1000 },
+                    viewport_size: Coordinates { x: 1000, y: 1000 },
+                })
+            })
+            .and_then(|result: GetDotsResult| {
+                let dots_id = vec!["9bea8e0c-5d0a-4018-be7d-2ae9af088a0c"];
+
+                assert_eq!(result.dots.len(), 1);
+                for id in dots_id {
+                    assert_eq!(result.dots.contains_key(&Uuid::parse_str(id).unwrap()), true);
+                }
+
+                dots_actor.send(GetDots {
+                    id: Uuid::parse_str("78a40100-4dc3-46e4-8a91-00e0316586e4").unwrap(),
+                    coordinates: Coordinates { x: 0, y: 600 },
+                    viewport_size: Coordinates { x: 1000, y: 1000 },
+                })
+            })
+            .map(|result: GetDotsResult| {
+                println!("{:?}", result.dots);
+                let dots_id = vec![
+                    "77d40cd1-be99-44d2-9bcf-7450f736fdba",
+                    "be196b9b-6a85-4ba3-b7ac-c1dd02d6178a",
+                    "018f87db-b89d-40f1-ab21-c1ba584fbca3",
+                    "ffe016bf-a99e-470f-aaab-1c5f1eb1c04b",
+                ];
+
+                assert_eq!(result.dots.len(), 4);
+                for id in dots_id {
+                    assert_eq!(result.dots.contains_key(&Uuid::parse_str(id).unwrap()), true);
+                }
+            });
+
+        system.block_on(get_dots_future).expect("System error");
     }
 
     #[test]
-    fn test_dots_actor_delete_dots() {}
+    fn test_dots_actor_delete_dots() {
+        let mut system = System::new("dots_deletion");
+        let dots_actor = Arc::new(Dots::default().start());
+
+        let delete_dots_future = dots_actor
+            .send(GetState)
+            .and_then(|result: Dots| {
+                assert_eq!(result.dots.len(), 12);
+                assert_eq!(result.dots_count, 12);
+                assert_eq!(result.max_dots_amount, MAX_DOTS_AMOUNT);
+
+                dots_actor.do_send(DeleteDots(vec![
+                    Uuid::parse_str("f9168c5e-ceb2-4faa-b6bf-329bf39fa1e4").unwrap(),
+                    Uuid::parse_str("e0183a5f-92af-4379-8d8d-cfd729d77d59").unwrap(),
+                    Uuid::parse_str("20066e7c-5dec-434f-97d1-663de407b05e").unwrap(),
+                    Uuid::parse_str("a0e3c51b-23a5-4809-b635-3eb6b3b1f794").unwrap(),
+                    Uuid::parse_str("77d40cd1-be99-44d2-9bcf-7450f736fdba").unwrap(),
+                ]));
+                dots_actor.send(GetState)
+            })
+            .map(|result: Dots| {
+                assert_eq!(result.dots.len(), 7);
+                assert_eq!(result.dots_count, 7);
+            });
+
+        system.block_on(delete_dots_future).expect("System error");
+    }
 }

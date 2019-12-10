@@ -63,7 +63,7 @@ impl Actor for Ws {
                 return;
             }
 
-            context.ping("");
+            //            context.ping("");
         });
     }
 }
@@ -83,8 +83,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
             }
             ws::Message::Text(payload) => {
                 self.ping_timestamp = Instant::now();
-                let message: ClientRequests =
-                    serde_json::from_str(&payload).unwrap_or(ClientRequests::Invalid);
+                let message: ClientRequests = serde_json::from_str(&payload).unwrap_or(ClientRequests::Invalid);
 
                 match message {
                     ClientRequests::Create(msg) => {
@@ -96,8 +95,8 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
                             })
                             .into_actor(self)
                             .map(move |result, _actor, context| {
-                                let result_json = serde_json::to_string(&result.unwrap())
-                                    .expect("Couldn't parse CreateResponse");
+                                let result_json =
+                                    serde_json::to_string(&result.unwrap()).expect("Couldn't parse CreateResponse");
                                 context.text(result_json);
                             })
                             .map_err(|error, _actor, _context| {
@@ -132,26 +131,9 @@ impl Handler<dots::GetDotsResult> for Ws {
     type Result = ();
 
     fn handle(&mut self, message: dots::GetDotsResult, context: &mut Self::Context) {
-        let result_json =
-            serde_json::to_string(&server_messages::DotsResponse { dots: message.dots })
-                .expect("Couldn't parse DotsResponse");
+        let result_json = serde_json::to_string(&server_messages::DotsResponse { dots: message.dots })
+            .expect("Couldn't parse DotsResponse");
 
         context.text(result_json);
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use futures::{future, Future};
-    use std::sync::Arc;
-
-    #[test]
-    fn test_ws_actor_connect_player() {}
-
-    #[test]
-    fn test_ws_actor_hb() {}
-
-    #[test]
-    fn test_ws_actor_get_dots() {}
 }

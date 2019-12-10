@@ -148,19 +148,3 @@ impl Handler<ws::MovePlayer> for World {
         });
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use futures::{future, Future};
-    use std::sync::Arc;
-
-    #[test]
-    fn test_world_actor_connect_player() {}
-
-    #[test]
-    fn test_world_actor_disconnect_player() {}
-
-    #[test]
-    fn test_world_actor_move_player() {}
-}
