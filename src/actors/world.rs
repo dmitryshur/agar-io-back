@@ -10,9 +10,8 @@ use std::sync::Arc;
 use crate::actors::dots::Dots;
 use crate::actors::ws::Ws;
 use crate::actors::{dots, players, ws};
-use crate::consts::{DOTS_SEND_INTERVAL, WORLD_X_SIZE, WORLD_Y_SIZE};
+use crate::consts::{DOTS_SEND_INTERVAL, PLAYERS_SEND_INTERVAL, WORLD_X_SIZE, WORLD_Y_SIZE};
 use crate::server_messages;
-use std::borrow::Borrow;
 
 // ********
 // Types
@@ -31,10 +30,8 @@ pub struct World {
     dots_actor: Arc<Addr<Dots>>,
 }
 
-impl Actor for World {
-    type Context = Context<Self>;
-
-    fn started(&mut self, context: &mut Self::Context) {
+impl World {
+    fn run_dots_interval(&self, context: &mut Context<Self>) {
         context.run_interval(DOTS_SEND_INTERVAL, |actor, _context| {
             for (address, id) in actor.players_connected.iter() {
                 let players_actor = actor.players_actor.clone();
@@ -64,6 +61,21 @@ impl Actor for World {
             }
         });
     }
+
+    fn run_players_interval(&self, context: &mut Context<Self>) {
+        context.run_interval(PLAYERS_SEND_INTERVAL, |_actor, _context| {
+
+        });
+    }
+}
+
+impl Actor for World {
+    type Context = Context<Self>;
+
+    fn started(&mut self, context: &mut Self::Context) {
+        self.run_dots_interval(context);
+        self.run_players_interval(context);
+    }
 }
 
 impl Default for World {
@@ -91,7 +103,7 @@ impl Handler<ws::ConnectPlayer> for World {
         let dots_actor = self.dots_actor.clone();
 
         let connect_player_future = players_actor
-            .send(players::CreatePlayer)
+            .send(players::CreatePlayer(message.request.viewport_size))
             .and_then(move |new_player| {
                 dots_actor.send(dots::GetDots {
                     id: new_player.id,

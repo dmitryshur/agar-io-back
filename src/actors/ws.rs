@@ -3,7 +3,7 @@ use actix::prelude::*;
 use actix_web_actors::ws;
 use serde_json;
 
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 
 use crate::actors::{dots, world};
 use crate::client_messages::{ClientRequests, CreateRequest, MoveRequest};
@@ -78,7 +78,7 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
                 self.ping_timestamp = Instant::now();
                 context.pong(&payload);
             }
-            ws::Message::Pong(payload) => {
+            ws::Message::Pong(_payload) => {
                 self.ping_timestamp = Instant::now();
             }
             ws::Message::Text(payload) => {

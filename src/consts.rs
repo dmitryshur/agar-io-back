@@ -13,6 +13,8 @@ pub const MAX_DOTS_AMOUNT: u32 = 10_000;
 pub const DOT_SIZE: u32 = 10;
 
 // Time
-pub const DOTS_SEND_INTERVAL: Duration = Duration::from_secs(4);
 pub const PING_SEND_INTERVAL: Duration = Duration::from_secs(2);
+pub const DOTS_SEND_INTERVAL: Duration = Duration::from_secs(4);
+pub const PLAYERS_SEND_INTERVAL: Duration = Duration::from_secs(1);
 pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
+pub const DOTS_CREATE_INTERVAL: Duration = Duration::from_secs(1);

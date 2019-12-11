@@ -13,7 +13,7 @@ use crate::utils::generate_coordinates;
 // ********
 #[derive(Message)]
 #[rtype(result = "CreatePlayerResult")]
-pub struct CreatePlayer;
+pub struct CreatePlayer(pub Coordinates);
 
 #[derive(Message)]
 pub struct MovePlayer {
@@ -42,6 +42,7 @@ pub struct CreatePlayerResult {
 pub struct Player {
     pub size: u32,
     pub coordinates: Coordinates,
+    pub viewport_size: Coordinates,
 }
 
 #[derive(MessageResponse, Debug, Clone)]
@@ -73,11 +74,12 @@ impl Actor for Players {
 impl Handler<CreatePlayer> for Players {
     type Result = CreatePlayerResult;
 
-    fn handle(&mut self, _message: CreatePlayer, _context: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, message: CreatePlayer, _context: &mut Context<Self>) -> Self::Result {
         let new_player_coordinates = generate_coordinates();
         let new_player = Player {
             size: DEFAULT_PLAYER_SIZE,
             coordinates: new_player_coordinates,
+            viewport_size: message.0,
         };
         let player_id = Uuid::new_v4();
 
@@ -140,6 +142,7 @@ mod tests {
     fn test_players_actor_create() {
         let mut system = System::new("players_creation");
         let player_actor = Arc::new(Players::default().start());
+        let viewport_size = Coordinates { x: 1000, y: 1000 };
 
         let create_player_future = player_actor
             .send(GetState)
@@ -150,14 +153,14 @@ mod tests {
                 assert_eq!(result.players_count, 0);
                 future::ok(())
             })
-            .and_then(|_future| player_actor.send(CreatePlayer))
+            .and_then(|_future| player_actor.send(CreatePlayer(viewport_size)))
             .and_then(|result| {
                 assert_eq!(result.coordinates, Coordinates { x: 100, y: 100 });
                 player_actor.send(GetState)
             })
             .and_then(|result| {
                 assert_eq!(result.players_count, 1);
-                player_actor.send(CreatePlayer)
+                player_actor.send(CreatePlayer(viewport_size))
             })
             .and_then(|_result| player_actor.send(GetState))
             .map(|result| {
@@ -183,6 +186,7 @@ mod tests {
             Player {
                 size: 10,
                 coordinates: Coordinates { x: 200, y: 200 },
+                viewport_size: Coordinates { x: 1000, y: 1000 },
             },
         );
         initial_players.insert(
@@ -190,6 +194,7 @@ mod tests {
             Player {
                 size: 20,
                 coordinates: Coordinates { x: 250, y: 250 },
+                viewport_size: Coordinates { x: 1000, y: 1000 },
             },
         );
 

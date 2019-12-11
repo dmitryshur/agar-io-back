@@ -5,8 +5,8 @@ use uuid::Uuid;
 use std::collections::HashMap;
 
 use crate::actors::world::Coordinates;
-use crate::consts::{DELTA_VIEWPORT, DOT_SIZE, MAX_DOTS_AMOUNT};
-use crate::utils::{generate_coordinates, generate_dots};
+use crate::consts::{DELTA_VIEWPORT, DOTS_CREATE_INTERVAL, DOT_SIZE, MAX_DOTS_AMOUNT};
+use crate::utils::{generate_dots};
 
 // ********
 // Messages
@@ -42,6 +42,15 @@ pub struct Dots {
 }
 
 impl Dots {
+    fn run_dots_creation_interval(&self, context: &mut Context<Self>) {
+        context.run_interval(DOTS_CREATE_INTERVAL, |actor, _context| {
+            if actor.dots_count < actor.max_dots_amount {
+                generate_dots(&mut actor.dots, actor.max_dots_amount);
+                actor.dots_count = actor.dots.len() as u32;
+            }
+        });
+    }
+
     fn find_viewport_dots(&self, viewport_size: Coordinates, player: Coordinates) -> HashMap<Uuid, Coordinates> {
         let min_x = (player.x)
             .checked_sub((viewport_size.x / 2) - DELTA_VIEWPORT)
@@ -113,16 +122,17 @@ impl Handler<DeleteDots> for Dots {
 impl Actor for Dots {
     type Context = Context<Self>;
 
-    fn started(&mut self, _context: &mut Context<Self>) {
-        self.dots = generate_dots(self.max_dots_amount);
+    fn started(&mut self, context: &mut Context<Self>) {
+        generate_dots(&mut self.dots, self.max_dots_amount);
         self.dots_count = self.dots.len() as u32;
+        self.run_dots_creation_interval(context);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::{future, Future};
+    use futures::{Future};
     use std::sync::Arc;
 
     #[derive(Message)]
@@ -195,7 +205,6 @@ mod tests {
                 })
             })
             .map(|result: GetDotsResult| {
-                println!("{:?}", result.dots);
                 let dots_id = vec![
                     "77d40cd1-be99-44d2-9bcf-7450f736fdba",
                     "be196b9b-6a85-4ba3-b7ac-c1dd02d6178a",

@@ -4,7 +4,6 @@ use uuid::Uuid;
 
 use std::collections::HashMap;
 
-use crate::actors::dots;
 use crate::actors::world::Coordinates;
 
 #[cfg(not(test))]
@@ -25,13 +24,21 @@ pub fn generate_coordinates() -> Coordinates {
 }
 
 #[cfg(not(test))]
-pub fn generate_dots(count: u32) -> HashMap<Uuid, Coordinates> {
-    (0..count).map(|_| (Uuid::new_v4(), generate_coordinates())).collect()
+pub fn generate_dots(dots: &mut HashMap<Uuid, Coordinates>, max_count: u32) {
+    let new_dots_count = max_count - dots.len() as u32;
+
+    let new_dots: HashMap<Uuid, Coordinates> = (0..new_dots_count)
+        .map(|_| (Uuid::new_v4(), generate_coordinates()))
+        .collect();
+
+    for (dot_id, dot_coordinates) in new_dots {
+        dots.insert(dot_id, dot_coordinates);
+    }
 }
 
 #[cfg(test)]
-pub fn generate_dots(count: u32) -> HashMap<Uuid, Coordinates> {
-    vec![
+pub fn generate_dots(dots: &mut HashMap<Uuid, Coordinates>, _max_count: u32) {
+    let new_dots: HashMap<Uuid, Coordinates> = vec![
         (
             Uuid::parse_str("f9168c5e-ceb2-4faa-b6bf-329bf39fa1e4").unwrap(),
             Coordinates { x: 0, y: 0 },
@@ -82,5 +89,9 @@ pub fn generate_dots(count: u32) -> HashMap<Uuid, Coordinates> {
         ),
     ]
     .into_iter()
-    .collect()
+    .collect();
+
+    for (dot_id, dot_coordinates) in new_dots {
+        dots.insert(dot_id, dot_coordinates);
+    }
 }
