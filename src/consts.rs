@@ -17,4 +17,4 @@ pub const PING_SEND_INTERVAL: Duration = Duration::from_secs(2);
 pub const DOTS_SEND_INTERVAL: Duration = Duration::from_secs(4);
 pub const PLAYERS_SEND_INTERVAL: Duration = Duration::from_secs(1);
 pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
-pub const DOTS_CREATE_INTERVAL: Duration = Duration::from_secs(1);
+pub const DOTS_CREATE_INTERVAL: Duration = Duration::from_secs(5);

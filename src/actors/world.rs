@@ -25,7 +25,6 @@ pub struct Coordinates {
 #[derive(Debug)]
 pub struct World {
     players_connected: HashMap<Addr<Ws>, Uuid>,
-    viewport_size: Coordinates,
     players_actor: Arc<Addr<players::Players>>,
     dots_actor: Arc<Addr<Dots>>,
 }
@@ -39,15 +38,14 @@ impl World {
 
                 let player_id = id.clone();
                 let player_address = address.clone();
-                let viewport_size = actor.viewport_size;
 
                 let get_player_dots_future = players_actor
                     .send(players::GetPlayer(player_id))
-                    .and_then(move |result| {
+                    .and_then(move |result: players::Player| {
                         dots_actor.send(dots::GetDots {
                             id: player_id,
                             coordinates: result.coordinates,
-                            viewport_size,
+                            viewport_size: result.viewport_size,
                         })
                     })
                     .map(move |result| {
@@ -63,8 +61,21 @@ impl World {
     }
 
     fn run_players_interval(&self, context: &mut Context<Self>) {
-        context.run_interval(PLAYERS_SEND_INTERVAL, |_actor, _context| {
+        context.run_interval(PLAYERS_SEND_INTERVAL, |actor, _context| {
+            for id in actor.players_connected.values() {
+                let players_actor = actor.players_actor.clone();
 
+                let get_players_in_viewport_future = players_actor
+                    .send(players::GetPlayersInViewport(*id))
+                    .map(|result: players::GetPlayersInViewportResult| {
+                        println!("{:?}", result);
+                    })
+                    .map_err(|error| {
+                        println!("{}", error);
+                    });
+
+                Arbiter::spawn(get_players_in_viewport_future);
+            }
         });
     }
 }
@@ -82,7 +93,6 @@ impl Default for World {
     fn default() -> Self {
         World {
             players_connected: HashMap::new(),
-            viewport_size: Coordinates { x: 0, y: 0 },
             players_actor: Arc::new(players::Players::default().start()),
             dots_actor: Arc::new(Dots::default().start()),
         }
@@ -96,8 +106,6 @@ impl Handler<ws::ConnectPlayer> for World {
     type Result = ResponseActFuture<Self, server_messages::CreateResponse, ()>;
 
     fn handle(&mut self, message: ws::ConnectPlayer, _context: &mut Context<Self>) -> Self::Result {
-        self.viewport_size = message.request.viewport_size;
-
         let player_address = message.address.clone();
         let players_actor = self.players_actor.clone();
         let dots_actor = self.dots_actor.clone();

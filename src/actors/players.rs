@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-
 use actix::dev::MessageResponse;
 use actix::prelude::*;
 use uuid::Uuid;
+
+use std::collections::HashMap;
 
 use crate::actors::world::Coordinates;
 use crate::consts::DEFAULT_PLAYER_SIZE;
@@ -26,6 +26,10 @@ pub struct MovePlayer {
 #[rtype(result = "Player")]
 pub struct GetPlayer(pub Uuid);
 
+#[derive(Debug, Message)]
+#[rtype(result = "GetPlayersInViewportResult")]
+pub struct GetPlayersInViewport(pub Uuid);
+
 // ****************
 // Messages results
 // ****************
@@ -35,6 +39,9 @@ pub struct CreatePlayerResult {
     pub coordinates: Coordinates,
 }
 
+#[derive(MessageResponse, Debug)]
+pub struct GetPlayersInViewportResult(Vec<(Coordinates, u32)>);
+
 // ********
 // Types
 // ********
@@ -43,6 +50,16 @@ pub struct Player {
     pub size: u32,
     pub coordinates: Coordinates,
     pub viewport_size: Coordinates,
+}
+
+impl Player {
+    fn new(viewport_size: Coordinates) -> Self {
+        Player {
+            size: DEFAULT_PLAYER_SIZE,
+            coordinates: generate_coordinates(),
+            viewport_size,
+        }
+    }
 }
 
 #[derive(MessageResponse, Debug, Clone)]
@@ -75,12 +92,7 @@ impl Handler<CreatePlayer> for Players {
     type Result = CreatePlayerResult;
 
     fn handle(&mut self, message: CreatePlayer, _context: &mut Context<Self>) -> Self::Result {
-        let new_player_coordinates = generate_coordinates();
-        let new_player = Player {
-            size: DEFAULT_PLAYER_SIZE,
-            coordinates: new_player_coordinates,
-            viewport_size: message.0,
-        };
+        let new_player = Player::new(message.0);
         let player_id = Uuid::new_v4();
 
         self.players.insert(player_id, new_player);
@@ -88,7 +100,7 @@ impl Handler<CreatePlayer> for Players {
 
         CreatePlayerResult {
             id: player_id,
-            coordinates: new_player_coordinates.clone(),
+            coordinates: new_player.coordinates,
         }
     }
 }
@@ -112,6 +124,40 @@ impl Handler<GetPlayer> for Players {
         let matching_player = self.players.get(&message.0).unwrap();
 
         matching_player.clone()
+    }
+}
+
+impl Handler<GetPlayersInViewport> for Players {
+    type Result = GetPlayersInViewportResult;
+
+    fn handle(&mut self, message: GetPlayersInViewport, _context: &mut Context<Self>) -> Self::Result {
+        if let Some(player) = self.players.get(&message.0) {
+            let min_x = (player.coordinates.x)
+                .checked_sub(player.viewport_size.x / 2)
+                .unwrap_or(0);
+            let max_x = player.coordinates.x + (player.viewport_size.x / 2);
+            let min_y = (player.coordinates.y)
+                .checked_sub(player.viewport_size.y / 2)
+                .unwrap_or(0);
+            let max_y = player.coordinates.y + (player.viewport_size.y / 2);
+
+            let players_in_viewport: Vec<(Coordinates, u32)> = self
+                .players
+                .iter()
+                .filter(|(id, player)| {
+                    **id != message.0
+                        && player.coordinates.x + player.size >= min_x
+                        && (player.coordinates.x < max_x)
+                        && player.coordinates.y + player.size >= min_y
+                        && player.coordinates.y < max_y
+                })
+                .map(|(_id, player)| (player.coordinates, player.size))
+                .collect();
+
+            return GetPlayersInViewportResult(players_in_viewport);
+        }
+
+        GetPlayersInViewportResult(Vec::new())
     }
 }
 
@@ -227,6 +273,65 @@ mod tests {
         });
 
         system.block_on(move_player_future).expect("System  error");
+    }
+
+    #[test]
+    fn test_get_players_in_viewport() {
+        let mut system = System::new("players_in_viewport");
+
+        let mut initial_players = HashMap::new();
+        let first_player_id =
+            Uuid::parse_str("f9168c5e-ceb2-4faa-b6bf-329bf39fa1e4").expect("Couldn't parse first player id");
+        let second_player_id =
+            Uuid::parse_str("78a40100-4dc3-46e4-8a91-00e0316586e4").expect("Couldn't parse second player id");
+        let third_player_id =
+            Uuid::parse_str("1f4c367c-f35f-4eda-8cb1-c4494fb542ab").expect("Couldn't parse the third player id");
+
+        initial_players.insert(
+            first_player_id,
+            Player {
+                size: 10,
+                coordinates: Coordinates { x: 200, y: 200 },
+                viewport_size: Coordinates { x: 500, y: 500 },
+            },
+        );
+        initial_players.insert(
+            second_player_id,
+            Player {
+                size: 20,
+                coordinates: Coordinates { x: 200, y: 250 },
+                viewport_size: Coordinates { x: 500, y: 500 },
+            },
+        );
+        initial_players.insert(
+            third_player_id,
+            Player {
+                size: 50,
+                coordinates: Coordinates { x: 200, y: 300 },
+                viewport_size: Coordinates { x: 500, y: 500 },
+            },
+        );
+
+        let player_actor = Arc::new(Players::new(initial_players, 3).start());
+
+        let get_players_in_viewport_future =
+            player_actor
+                .send(GetPlayersInViewport(first_player_id))
+                .and_then(|result: GetPlayersInViewportResult| {
+                    let expected_vec = vec![
+                        (Coordinates { x: 200, y: 250 }, 20),
+                        (Coordinates { x: 200, y: 300 }, 50),
+                    ];
+
+                    assert_eq!(result.0.len(), expected_vec.len());
+                    for player_data in expected_vec.iter() {
+                        assert_eq!(result.0.contains(player_data), true);
+                    }
+
+                    future::ok(())
+                });
+
+        system.block_on(get_players_in_viewport_future).expect("System error");
     }
 
     #[test]
