@@ -8,8 +8,6 @@ use crate::actors::world::Coordinates;
 pub enum ClientRequests {
     Create(CreateRequest),
     Move(MoveRequest),
-    Win(WinRequest),
-    Lose(LoseRequest),
     Invalid,
 }
 
@@ -24,16 +22,6 @@ pub struct MoveRequest {
     pub size: u32,
     pub moved: Coordinates,
     pub dots_consumed: Vec<Uuid>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct WinRequest {
-    win_id: Uuid,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct LoseRequest {
-    lose_id: Uuid,
 }
 
 #[derive(Deserialize, Debug)]

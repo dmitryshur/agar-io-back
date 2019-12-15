@@ -161,10 +161,22 @@ impl Handler<ws::MovePlayer> for World {
             dots_actor.do_send(dots::DeleteDots(message.request.dots_consumed));
         }
 
-        players_actor.do_send(players::MovePlayer {
-            id: message.request.id,
-            size: message.request.size,
-            moved: message.request.moved,
-        });
+        let move_player_future = players_actor
+            .send(players::MovePlayer {
+                id: message.request.id,
+                size: message.request.size,
+                moved: message.request.moved,
+            })
+            .map(|result: players::MovePlayerResult| match result.0 {
+                Some(collision_data) => {
+                    println!("{:?}", collision_data);
+                }
+                None => {}
+            })
+            .map_err(|error| {
+                println!("{}", error);
+            });
+
+        Arbiter::spawn(move_player_future);
     }
 }

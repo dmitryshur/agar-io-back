@@ -16,6 +16,7 @@ use crate::utils::generate_coordinates;
 pub struct CreatePlayer(pub Coordinates);
 
 #[derive(Message)]
+#[rtype(result = "MovePlayerResult")]
 pub struct MovePlayer {
     pub id: Uuid,
     pub moved: Coordinates,
@@ -39,6 +40,9 @@ pub struct CreatePlayerResult {
     pub coordinates: Coordinates,
 }
 
+#[derive(MessageResponse)]
+pub struct MovePlayerResult(pub Option<CollisionData>);
+
 #[derive(MessageResponse, Debug)]
 pub struct GetPlayersInViewportResult(Vec<(Coordinates, u32)>);
 
@@ -50,6 +54,13 @@ pub struct Player {
     pub size: u32,
     pub coordinates: Coordinates,
     pub viewport_size: Coordinates,
+}
+
+#[derive(Debug)]
+pub struct CollisionData {
+    pub win_id: Uuid,
+    pub win_size: u32,
+    pub lose_id: Uuid,
 }
 
 impl Player {
@@ -106,14 +117,40 @@ impl Handler<CreatePlayer> for Players {
 }
 
 impl Handler<MovePlayer> for Players {
-    type Result = ();
+    type Result = MovePlayerResult;
 
-    fn handle(&mut self, message: MovePlayer, _context: &mut Context<Self>) {
+    fn handle(&mut self, message: MovePlayer, _context: &mut Context<Self>) -> Self::Result {
         if let Some(player) = self.players.get_mut(&message.id) {
             player.size = message.size;
             player.coordinates.x += message.moved.x;
             player.coordinates.y += message.moved.y;
         }
+
+        if let Some(player) = self.players.get(&message.id) {
+            for (player_id, player_data) in self.players.iter() {
+                if *player_id == message.id {
+                    continue;
+                }
+
+                if player.coordinates.x < player_data.coordinates.x + player_data.size
+                    && player.coordinates.x + player.size > player_data.coordinates.x
+                    && player.coordinates.y < player_data.coordinates.y + player_data.size
+                    && player.coordinates.y + player.size > player_data.coordinates.y
+                {
+                    if player.size > player_data.size {
+                        return MovePlayerResult(Some(CollisionData {
+                            win_id: message.id,
+                            win_size: player.size + player_data.size,
+                            lose_id: *player_id,
+                        }));
+                    } else {
+                        return MovePlayerResult(None);
+                    }
+                }
+            }
+        }
+
+        MovePlayerResult(None)
     }
 }
 

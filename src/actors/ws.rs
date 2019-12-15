@@ -111,14 +111,8 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Ws {
                             address: context.address(),
                         });
                     }
-                    ClientRequests::Win(_msg) => {
-                        println!("Got win message");
-                    }
-                    ClientRequests::Lose(_msg) => {
-                        println!("Got lose message");
-                    }
                     ClientRequests::Invalid => {
-                        println!("Got invalid message");
+                        println!("Invalid message");
                     }
                 }
             }
